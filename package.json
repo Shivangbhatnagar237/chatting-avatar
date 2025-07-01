@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@met4citizen/talkinghead": "^1.4.0",
     "@react-three/drei": "^10.0.3",
     "@react-three/fiber": "^9.0.4",
     "react": "^19.1.0",
