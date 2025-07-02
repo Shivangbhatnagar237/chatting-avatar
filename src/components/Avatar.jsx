@@ -14,7 +14,7 @@ const Avatar = React.forwardRef(
     const { scene } = useGLTF('models/68624e8f35fff28602dbc860.glb');
     const clone = useMemo(() => SkeletonUtils.clone(scene), [scene]);
     const { nodes, materials } = useGraph(clone);
-
+    
     return (
       <group ref={ref || group} {...props} dispose={null}>
         <group name="Scene">

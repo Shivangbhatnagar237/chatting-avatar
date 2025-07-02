@@ -42,121 +42,118 @@ export const Experience = ({
     }
   }, [spokenText]);
 
+  const hasLogged = useRef(false);
+
+  useFrame(() => {
+    if (!hasLogged.current) {
+      avatarRef.current.traverse((obj) => {
+        console.log(`Type: ${obj.type}, Name: ${obj.name}`);
+      });
+      hasLogged.current = true; // Prevent further logging
+    }
+  });
+
+  const eyeDartState = useRef({
+    nextDart: Math.random() * 1.5 + 0.5, // 0.5–2s
+    lastTime: 0,
+    targetX: 0,
+    targetY: 0,
+    currentX: 0,
+    currentY: 0,
+  });
+
+  const headMoveState = useRef({
+    nextMove: 0,
+    lastTime: 0,
+    target: { x: 0, y: 0, z: 0 },
+    current: { x: 0, y: 0, z: 0 },
+  });
+
+  const smoothHeadX = useRef(0);
+
   useFrame((state) => {
     if (!avatarRef.current) return;
     let head = null,
       eyeL = null,
       eyeR = null,
-      teeth = null;
+      teeth = null,
+      headBone = null,
+      leftEye = null,
+      rightEye = null;
+
     avatarRef.current.traverse((obj) => {
       if (obj.name === "Wolf3D_Head") head = obj;
       if (obj.name === "EyeLeft") eyeL = obj;
       if (obj.name === "EyeRight") eyeR = obj;
       if (obj.name === "Wolf3D_Teeth") teeth = obj;
+      if (obj.type === "Bone" && obj.name === "Head") headBone = obj;
+      if (obj.name === "LeftEye") leftEye = obj;
+      if (obj.name === "RightEye") rightEye = obj;
     });
-    let targetY = 0,
-      targetX = 0,
-      eyeOffsetX = 0,
-      eyeOffsetY = 0;
-    if (spokenText && readingPhase.current > 0) {
-      const now = performance.now();
-      const elapsed = now - readingStart.current;
-      if (readingPhase.current === 1) {
-        const t = Math.min(elapsed / 1200, 1);
-        targetY = -0.15 + 0.3 * t; // -8.5deg to +8.5deg
-        targetX = 0;
-        if (t >= 1) {
-          readingPhase.current = 2;
-          readingStart.current = now;
-        }
-      } else if (readingPhase.current === 2) {
-        const t = Math.min((elapsed - 1200) / 700, 1);
-        targetX = -0.08 * t; // up to -4.5deg
-        targetY = 0.15; // hold at right
-        if (t >= 1) {
-        }
-      }
-      eyeOffsetX = targetY * 1.2;
-      eyeOffsetY = targetX * 1.2;
-    } else {
-      targetY = mouse.current.x * 0.15; // -0.15 to 0.15
-      targetX = -0.05 + mouse.current.y * 0.08; // looks slightly up by default
-      eyeOffsetX = targetY * 1.2;
-      eyeOffsetY = targetX * 1.2;
+
+    const upwardBias = isSpeaking ? -0.07 : 0;
+    const targetX = -Math.PI / 8 + (isSpeaking ? -0.07 : 0); // or adjust as needed
+    smoothHeadX.current += (targetX - smoothHeadX.current) * 0.08;
+
+    if (headBone) {
+      headBone.rotation.x = smoothHeadX.current; // Try -Math.PI / 6 for more tilt
     }
-    if (head) {
-      head.rotation.y += (targetY - head.rotation.y) * 0.2;
-      head.rotation.x += (targetX - head.rotation.x) * 0.2;
+
+    const now = state.clock.getElapsedTime();
+
+    const eyeDart = eyeDartState.current;
+    const maxDart = 0.1;
+    if (now - eyeDart.lastTime > eyeDart.nextDart) {
+      eyeDart.lastTime = now;
+      eyeDart.nextDart = Math.random() * 1.2 + 1.2;
+      eyeDart.targetX = (Math.random() - 0.5) * 2 * maxDart; // -0.005 to +0.005
+      eyeDart.targetY = (Math.random() - 0.5) * 2 * maxDart;
     }
-    if (eyeL && eyeL.morphTargetInfluences && eyeL.morphTargetDictionary) {
-      const leftRight =
-        eyeL.morphTargetDictionary["eyeLookLeft"] !== undefined
-          ? "eyeLookLeft"
-          : null;
-      const rightLeft =
-        eyeL.morphTargetDictionary["eyeLookRight"] !== undefined
-          ? "eyeLookRight"
-          : null;
-      const up =
-        eyeL.morphTargetDictionary["eyeLookUp"] !== undefined
-          ? "eyeLookUp"
-          : null;
-      const down =
-        eyeL.morphTargetDictionary["eyeLookDown"] !== undefined
-          ? "eyeLookDown"
-          : null;
-      if (leftRight && rightLeft) {
-        eyeL.morphTargetInfluences[eyeL.morphTargetDictionary[leftRight]] =
-          Math.max(0, -eyeOffsetX);
-        eyeL.morphTargetInfluences[eyeL.morphTargetDictionary[rightLeft]] =
-          Math.max(0, eyeOffsetX);
-      }
-      if (up && down) {
-        eyeL.morphTargetInfluences[eyeL.morphTargetDictionary[up]] = Math.max(
-          0,
-          -eyeOffsetY
-        );
-        eyeL.morphTargetInfluences[eyeL.morphTargetDictionary[down]] = Math.max(
-          0,
-          eyeOffsetY
-        );
-      }
+    eyeDart.currentX += (eyeDart.targetX - eyeDart.currentX) * 0.05;
+    eyeDart.currentY += (eyeDart.targetY - eyeDart.currentY) * 0.05;
+    if (leftEye) {
+      leftEye.rotation.y = eyeDart.currentX;
     }
-    if (eyeR && eyeR.morphTargetInfluences && eyeR.morphTargetDictionary) {
-      const leftRight =
-        eyeR.morphTargetDictionary["eyeLookLeft"] !== undefined
-          ? "eyeLookLeft"
-          : null;
-      const rightLeft =
-        eyeR.morphTargetDictionary["eyeLookRight"] !== undefined
-          ? "eyeLookRight"
-          : null;
-      const up =
-        eyeR.morphTargetDictionary["eyeLookUp"] !== undefined
-          ? "eyeLookUp"
-          : null;
-      const down =
-        eyeR.morphTargetDictionary["eyeLookDown"] !== undefined
-          ? "eyeLookDown"
-          : null;
-      if (leftRight && rightLeft) {
-        eyeR.morphTargetInfluences[eyeR.morphTargetDictionary[leftRight]] =
-          Math.max(0, -eyeOffsetX);
-        eyeR.morphTargetInfluences[eyeR.morphTargetDictionary[rightLeft]] =
-          Math.max(0, eyeOffsetX);
-      }
-      if (up && down) {
-        eyeR.morphTargetInfluences[eyeR.morphTargetDictionary[up]] = Math.max(
-          0,
-          -eyeOffsetY
-        );
-        eyeR.morphTargetInfluences[eyeR.morphTargetDictionary[down]] = Math.max(
-          0,
-          eyeOffsetY
-        );
-      }
+    if (rightEye) {
+      rightEye.rotation.y = eyeDart.currentX;
     }
+
+    const move = headMoveState.current;
+
+    // Every 1–2 seconds, pick a new random target rotation
+    if (now - move.lastTime > move.nextMove) {
+      move.lastTime = now;
+      move.nextMove = Math.random() * 2 + 2; // 1–2s
+      move.target.x = (Math.random() - 0.5) * 0.04; // Pitch (up/down), ±0.02 rad
+      move.target.y = (Math.random() - 0.5) * 0.2; // Yaw (left/right), ±0.02 rad
+      move.target.z = (Math.random() - 0.5) * 0.1; // Roll (tilt), ±0.01 rad
+    }
+
+    // Smoothly interpolate toward the target
+    move.current.x += (move.target.x - move.current.x) * 0.05;
+    move.current.y += (move.target.y - move.current.y) * 0.05;
+    move.current.z += (move.target.z - move.current.z) * 0.05;
+
+    const maxYaw = 0.15; // left/right (Y axis), about 8.5°
+    const mouseX = mouse.current.x * maxYaw;
+
+    // --- Blend idle and mouse movement ---
+    const idleWeight = 0.7;
+    const mouseWeight = 0.3;
+    const blendedY = move.current.y * idleWeight + mouseX * mouseWeight;
+    const blendedZ = move.current.z;
+
+    // Apply to head bone
+    if (headBone) {
+      headBone.rotation.y = blendedY;
+      headBone.rotation.z = blendedZ;
+    }
+
     if (head && head.morphTargetDictionary && head.morphTargetInfluences) {
+      const smileIdx = head.morphTargetDictionary["mouthSmile"];
+      if (smileIdx !== undefined) {
+        head.morphTargetInfluences[smileIdx] = 0.3 + 0.2 * Math.sin(now * 0.5);
+      }
       if (isSpeaking) {
         const t = state.clock.getElapsedTime();
         const mouthValue = 0.3 + 0.2 * Math.abs(Math.sin(t * 6));
@@ -210,11 +207,7 @@ export const Experience = ({
           <sphereGeometry args={[1.2, 32, 32]} />
           <meshStandardMaterial transparent opacity={0} />
         </mesh>
-        <Avatar
-          ref={avatarRef}
-          position={[0, -4.5, 0]}
-          scale={7}
-        />
+        <Avatar ref={avatarRef} position={[0, -4.25, 0]} scale={7} />
       </group>
       <ambientLight intensity={2} />
     </>
