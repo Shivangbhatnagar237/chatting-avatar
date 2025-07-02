@@ -3,7 +3,7 @@ import Avatar from "./Avatar";
 import { useThree, useFrame } from "@react-three/fiber";
 import { useRef, useEffect } from "react";
 
-export const Experience = ({ spokenText }) => {
+export const Experience = ({ spokenText, isSpeaking, visemeSequence, audioStartTime }) => {
   const avatarRef = useRef();
   const { camera, gl } = useThree();
   const mouse = useRef({ x: 0, y: 0 });
@@ -18,7 +18,7 @@ export const Experience = ({ spokenText }) => {
     }
     gl.domElement.addEventListener("mousemove", onMouseMove);
     return () => gl.domElement.removeEventListener("mousemove", onMouseMove);
-  }, [gl]);
+  }, []);
 
   useEffect(() => {
     if (spokenText) {
@@ -29,13 +29,14 @@ export const Experience = ({ spokenText }) => {
     }
   }, [spokenText]);
 
-  useFrame(() => {
+  useFrame((state) => {
     if (!avatarRef.current) return;
-    let head = null, eyeL = null, eyeR = null;
+    let head = null, eyeL = null, eyeR = null, teeth = null;
     avatarRef.current.traverse(obj => {
       if (obj.name === "Wolf3D_Head") head = obj;
       if (obj.name === "EyeLeft") eyeL = obj;
       if (obj.name === "EyeRight") eyeR = obj;
+      if (obj.name === "Wolf3D_Teeth") teeth = obj;
     });
     let targetY = 0, targetX = 0, eyeOffsetX = 0, eyeOffsetY = 0;
     if (spokenText && readingPhase.current > 0) {
@@ -96,6 +97,78 @@ export const Experience = ({ spokenText }) => {
         eyeR.morphTargetInfluences[eyeR.morphTargetDictionary[down]] = Math.max(0, eyeOffsetY);
       }
     }
+    if (head && head.morphTargetDictionary && head.morphTargetInfluences) {
+      const mouthMorphs = [
+        "mouthOpen", "viseme_aa", "viseme_ih", "viseme_oh", "viseme_ou", "viseme_ee", "viseme_ae"
+      ];
+      if (isSpeaking) {
+        const t = state.clock.getElapsedTime();
+        const mouthValue = 0.3 + 0.2 * Math.abs(Math.sin(t * 6));
+        mouthMorphs.forEach(morph => {
+          if (head.morphTargetDictionary[morph] !== undefined) {
+            head.morphTargetInfluences[head.morphTargetDictionary[morph]] = mouthValue;
+          }
+        });
+      } else {
+        mouthMorphs.forEach(morph => {
+          if (head.morphTargetDictionary[morph] !== undefined) {
+            head.morphTargetInfluences[head.morphTargetDictionary[morph]] = 0;
+          }
+        });
+      }
+    }
+    if (teeth && teeth.morphTargetDictionary && teeth.morphTargetInfluences) {
+      const mouthMorphs = [
+        "mouthOpen", "viseme_aa", "viseme_ih", "viseme_oh", "viseme_ou", "viseme_ee", "viseme_ae"
+      ];
+      if (isSpeaking) {
+        const t = state.clock.getElapsedTime();
+        const mouthValue = 0.3 + 0.2 * Math.abs(Math.sin(t * 6));
+        mouthMorphs.forEach(morph => {
+          if (teeth.morphTargetDictionary[morph] !== undefined) {
+            teeth.morphTargetInfluences[teeth.morphTargetDictionary[morph]] = mouthValue;
+          }
+        });
+      } else {
+        mouthMorphs.forEach(morph => {
+          if (teeth.morphTargetDictionary[morph] !== undefined) {
+            teeth.morphTargetInfluences[teeth.morphTargetDictionary[morph]] = 0;
+          }
+        });
+      }
+    }
+    if (visemeSequence) {
+      const elapsed = performance.now() / 1000 - audioStartTime;
+      // Find the current viseme based on elapsed time
+      const currentViseme = visemeSequence.findLast(v => v.time <= elapsed);
+      if (currentViseme && head && head.morphTargetDictionary && head.morphTargetInfluences) {
+        // Reset all viseme morphs to 0
+        Object.keys(head.morphTargetDictionary).forEach(morph => {
+          if (morph.startsWith("viseme_")) {
+            head.morphTargetInfluences[head.morphTargetDictionary[morph]] = 0;
+          }
+        });
+        // Activate the current viseme morph
+        const morphName = `viseme_${currentViseme.value}`;
+        if (head.morphTargetDictionary[morphName] !== undefined) {
+          head.morphTargetInfluences[head.morphTargetDictionary[morphName]] = 1;
+        }
+      }
+      // Repeat for teeth if needed
+      if (currentViseme && teeth && teeth.morphTargetDictionary && teeth.morphTargetInfluences) {
+        Object.keys(teeth.morphTargetDictionary).forEach(morph => {
+          if (morph.startsWith("viseme_")) {
+            teeth.morphTargetInfluences[teeth.morphTargetDictionary[morph]] = 0;
+          }
+        });
+        const morphName = `viseme_${currentViseme.value}`;
+        if (teeth.morphTargetDictionary[morphName] !== undefined) {
+          teeth.morphTargetInfluences[teeth.morphTargetDictionary[morphName]] = 1;
+        }
+      }
+    }
+    // Map viseme value (e.g., 'aa') to morph target (e.g., 'viseme_aa')
+    // Set that morph target to 1, others to 0
   });
 
   return (
@@ -113,7 +186,7 @@ export const Experience = ({ spokenText }) => {
           <sphereGeometry args={[1.2, 32, 32]} />
           <meshStandardMaterial transparent opacity={0} />
         </mesh>
-        <Avatar ref={avatarRef} position={[0, -4.5, 0]} scale={7} />
+        <Avatar ref={avatarRef} position={[0, -4.5, 0]} scale={7} visemeSequence={visemeSequence} audioStartTime={audioStartTime} />
       </group>
       <ambientLight intensity={2} />
     </>

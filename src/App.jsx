@@ -1,13 +1,16 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Canvas } from "@react-three/fiber";
 import { Experience } from "./components/Experience";
 import InputForm from "./components/InputForm";
 import SpokenTextDisplay from "./components/SpokenTextDisplay";
 import TranscriptPanel from "./components/TranscriptPanel";
+import { synthesizeSpeech } from "./utils/tts";
+import { playAudioBuffer } from "./utils/audio";
 
 const interFont = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap';
 
 function App() {
+  // UI state
   const [input, setInput] = useState("");
   const [spokenText, setSpokenText] = useState("");
   const [transcript, setTranscript] = useState([]);
@@ -16,9 +19,13 @@ function App() {
   const [textKey, setTextKey] = useState(0); // for remounting
   const [cooldown, setCooldown] = useState(false);
   const [wiggle, setWiggle] = useState(false);
-  const voicesRef = useRef([]);
-  const [voiceReady, setVoiceReady] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
 
+  // Lip sync state
+  const [visemeSequence, setVisemeSequence] = useState(null);
+  const [audioStartTime, setAudioStartTime] = useState(null);
+
+  // Font loading
   useEffect(() => {
     const link = document.createElement('link');
     link.href = interFont;
@@ -27,24 +34,12 @@ function App() {
     return () => document.head.removeChild(link);
   }, []);
 
-  useEffect(() => {
-    function loadVoices() {
-      const voices = window.speechSynthesis.getVoices();
-      if (voices.length) {
-        voicesRef.current = voices;
-        setVoiceReady(true);
-      } else {
-        setTimeout(loadVoices, 100);
-      }
-    }
-    loadVoices();
-  }, []);
-
+  // Spoken text fade out
   useEffect(() => {
     if (!spokenText) return;
     setTextOpacity(1);
     setTextKey((k) => k + 1); // force remount
-    const fadeTimeout = setTimeout(() => setTextOpacity(0), 3000); // Start fade after render
+    const fadeTimeout = setTimeout(() => setTextOpacity(0), 3000);
     const clearTextTimeout = setTimeout(() => setSpokenText(""), 5050);
     return () => {
       clearTimeout(fadeTimeout);
@@ -52,6 +47,7 @@ function App() {
     };
   }, [spokenText]);
 
+  // Text fade animation
   useEffect(() => {
     if (textOpacity === 1) return;
     let frame;
@@ -71,6 +67,7 @@ function App() {
     return () => cancelAnimationFrame(frame);
   }, [textOpacity, textKey]);
 
+  // Cooldown for submit button
   useEffect(() => {
     if (!cooldown) return;
     const timer = setTimeout(() => {
@@ -79,7 +76,8 @@ function App() {
     return () => clearTimeout(timer);
   }, [cooldown]);
 
-  const handleSubmit = (e) => {
+  // Handle text submit: TTS, audio, visemes
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (cooldown) {
       setWiggle(false);
@@ -89,22 +87,46 @@ function App() {
     if (input.trim() === "") return;
     setSpokenText(input);
     setTranscript((prev) => [...prev, input]);
-    if (window.speechSynthesis) {
-      const utterance = new window.SpeechSynthesisUtterance(input);
-      let selectedVoice = null;
-      if (voicesRef.current.length) {
-        selectedVoice = voicesRef.current.find(v => v.lang === 'en-IN');
-      }
-      if (selectedVoice) {
-        utterance.voice = selectedVoice;
-        utterance.lang = 'en-IN';
-      } else {
-        utterance.lang = 'en-IN'; // fallback, browser may pick best
-      }
-      window.speechSynthesis.speak(utterance);
-    }
     setInput("");
     setCooldown(true);
+
+    let messages;
+    try {
+      messages = await synthesizeSpeech(input);
+    } catch (err) {
+      alert("TTS failed: " + err.message);
+      setVisemeSequence(null);
+      setAudioStartTime(null);
+      return;
+    }
+    const audioMsg = messages.find(msg => msg.type === "audio");
+    const visemes = audioMsg?.data?.visemes;
+    const vtimes = audioMsg?.data?.vtimes;
+    const vdurations = audioMsg?.data?.vdurations;
+    const audioBuffer = audioMsg?.data?.audio;
+
+    if (!audioBuffer || !visemes || !vtimes || !vdurations) {
+      alert("TTS did not return audio or visemes.");
+      setVisemeSequence(null);
+      setAudioStartTime(null);
+      return;
+    }
+    const visemeSequence = visemes.map((v, i) => ({
+      value: v,
+      time: vtimes[i] / 1000,      // convert ms to seconds
+      duration: vdurations[i] / 1000
+    }));
+    // Set viseme sequence and start time BEFORE playing audio
+    setVisemeSequence(visemeSequence);
+    const startTime = performance.now() / 1000;
+    setAudioStartTime(startTime);
+    // Play audio
+    setIsSpeaking(true);
+    await playAudioBuffer(audioMsg.data?.audio);
+    setIsSpeaking(false);
+    // Clear viseme sequence after audio finishes
+    setVisemeSequence(null);
+    setAudioStartTime(null);
   };
 
   return (
@@ -156,7 +178,13 @@ function App() {
       >
         <Canvas shadows camera={{ position: [0, 2, 5], fov: 30 }} style={{ background: "#000" }}>
           <color attach="background" args={["#000"]} />
-          <Experience spokenText={spokenText} />
+          <Experience
+            spokenText={spokenText}
+            visemeSequence={visemeSequence}
+            audioStartTime={audioStartTime}
+            isSpeaking={isSpeaking}
+            
+          />
         </Canvas>
       </div>
     </div>
